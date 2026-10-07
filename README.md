@@ -3,20 +3,53 @@
 ## Project Purpose
 The Bulk Certificate Generator application is designed to process bulk requests for certificate generation, validate recipient information, generate individual certificates from predefined templates, and track job execution progress.
 
-## Current Status: Phase 1 (Foundation)
-This codebase represents **Phase 1: Project Foundation**. It establishes the core FastAPI application setup, configuration management, and health verification endpoint.
+## Current Status: Phase 2 (PostgreSQL & Persistence Layer)
+This codebase represents **Phase 2: PostgreSQL Database Integration and SQLAlchemy Persistence Foundation**.
+
+It introduces:
+- **PostgreSQL Database Support**
+- **SQLAlchemy 2.x Declarative Models** (`GenerationJob` and `Certificate`)
+- **Alembic Database Migrations**
+- **Database Dependency Injection** (`get_db`)
 
 > [!NOTE]
-> Database models, background workers, certificate generation logic, and business APIs are out of scope for Phase 1 and will be introduced in future phases.
+> Background job processing, PDF generation (ReportLab), and public certificate generation API endpoints remain out of scope for Phase 2 and will be introduced in subsequent phases.
 
 ## Tech Stack
 - **Python**: 3.12+
 - **Framework**: FastAPI
 - **ASGI Server**: Uvicorn
+- **ORM**: SQLAlchemy 2.x
+- **Database Driver**: Psycopg 3 (`psycopg[binary]`)
+- **Database Migrations**: Alembic
 - **Configuration**: Pydantic Settings
 - **Testing**: Pytest & HTTPX (TestClient)
 
-## Setup Instructions
+## Database Architecture
+
+### Models & Relationships
+
+1. **`GenerationJob` (`generation_jobs`)**:
+   - `id`: UUID (Primary Key)
+   - `event_name`: String (Required)
+   - `event_date`: Date (Optional)
+   - `status`: JobStatus Enum (`PENDING`, `PROCESSING`, `COMPLETED`, `COMPLETED_WITH_ERRORS`, `FAILED`)
+   - `total_count`, `success_count`, `failure_count`: Integers
+   - `created_at`, `completed_at`: Timestamps with timezone
+
+2. **`Certificate` (`certificates`)**:
+   - `id`: UUID (Primary Key)
+   - `job_id`: UUID (Foreign Key -> `generation_jobs.id`, ON DELETE CASCADE, Indexed)
+   - `recipient_name`: String (Required)
+   - `recipient_email`: String (Required)
+   - `status`: CertificateStatus Enum (`PENDING`, `PROCESSING`, `SUCCESS`, `FAILED`, Indexed)
+   - `file_path`: String (Optional)
+   - `error_message`: String (Optional)
+   - `created_at`, `completed_at`: Timestamps with timezone
+
+- **Relationship**: `GenerationJob 1 ---- N Certificate` (`job.certificates` and `certificate.job`).
+
+## Setup & Local Database Configuration
 
 1. **Clone the repository**:
    ```bash
@@ -39,9 +72,25 @@ This codebase represents **Phase 1: Project Foundation**. It establishes the cor
    ```
 
 4. **Environment Configuration**:
-   Copy `.env.example` to `.env` if custom environment variables are required:
+   Copy `.env.example` to `.env`:
    ```bash
    cp .env.example .env
+   ```
+   Set `DATABASE_URL` in `.env` to point to your local PostgreSQL instance:
+   ```env
+   DATABASE_URL="postgresql+psycopg://postgres:your_password@localhost:5432/certificate_db"
+   ```
+
+5. **Local PostgreSQL Setup**:
+   Create local PostgreSQL database:
+   ```sql
+   CREATE DATABASE certificate_db;
+   ```
+
+6. **Run Database Migrations**:
+   Initialize and apply Alembic schema migrations:
+   ```bash
+   alembic upgrade head
    ```
 
 ## Running the Application
@@ -56,7 +105,7 @@ The application will start at `http://127.0.0.1:8000`.
 
 ## Interactive API Documentation (Swagger)
 
-Once the application is running, access the interactive Swagger UI at:
+Access the interactive Swagger UI at:
 - **Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - **ReDoc**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
 

@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "Bulk Certificate Generator"
     APP_VERSION: str = "0.1.0"
     ENVIRONMENT: str = "development"
+    DATABASE_URL: str = (
+        "postgresql+psycopg://postgres:password@localhost:5432/certificate_db"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
