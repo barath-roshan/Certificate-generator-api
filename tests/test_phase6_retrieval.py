@@ -296,3 +296,21 @@ def test_end_to_end_job_lifecycle(client: TestClient, db_session: Session, tmp_p
     assert download_res.status_code == status.HTTP_200_OK
     assert download_res.headers["content-type"] == "application/pdf"
     assert download_res.content.startswith(b"%PDF-")
+
+
+def test_download_certificate_openapi_schema() -> None:
+    """Regression Test: Verify GET /api/v1/certificates/{certificate_id} OpenAPI schema has UUID path parameter and NO requestBody."""
+    openapi = app.openapi()
+    route_spec = openapi["paths"]["/api/v1/certificates/{certificate_id}"]["get"]
+    
+    assert "requestBody" not in route_spec, "GET /certificates/{certificate_id} must not require a requestBody"
+    assert "parameters" in route_spec
+    
+    params = route_spec["parameters"]
+    assert len(params) == 1
+    param = params[0]
+    assert param["name"] == "certificate_id"
+    assert param["in"] == "path"
+    assert param["required"] is True
+    assert param["schema"]["type"] == "string"
+    assert param["schema"]["format"] == "uuid"

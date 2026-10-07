@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -29,13 +29,28 @@ def process_job(job_id: uuid.UUID, db: Optional[Session] = None) -> None:
         session_created = True
 
     try:
+        # Atomically claim job (PENDING -> PROCESSING)
+        claim_result = db.execute(
+            update(GenerationJob)
+            .where(
+                GenerationJob.id == job_id,
+                GenerationJob.status == JobStatus.PENDING,
+            )
+            .values(status=JobStatus.PROCESSING)
+        )
+        db.commit()
+
+        if claim_result.rowcount == 0:
+            logger.info(
+                "Job %s is not in PENDING status or already claimed by another worker. Exiting worker.",
+                job_id,
+            )
+            return
+
         job = db.scalar(select(GenerationJob).where(GenerationJob.id == job_id))
         if not job:
             logger.error("Job %s not found in database for background processing", job_id)
             return
-
-        job.status = JobStatus.PROCESSING
-        db.commit()
 
         certificates = db.scalars(
             select(Certificate)

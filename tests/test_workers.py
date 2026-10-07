@@ -207,3 +207,33 @@ def test_api_schedules_and_processes_job(client: TestClient, db_session: Session
     assert job.status == JobStatus.COMPLETED
     assert job.success_count == 1
     assert job.failure_count == 0
+
+
+def test_process_job_duplicate_worker_invocation_safety(db_session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify duplicate invocation of process_job on an already claimed or processing job cleanly exits without double-processing."""
+    monkeypatch.setattr("app.generators.pdf_generator.settings.STORAGE_PATH", str(tmp_path))
+
+    job = GenerationJob(
+        event_name="Duplicate Worker Test",
+        event_date=date(2026, 10, 7),
+        status=JobStatus.PROCESSING,  # Already processing / claimed
+        total_count=1,
+    )
+    cert = Certificate(
+        job=job,
+        recipient_name="Duplicate User",
+        recipient_email="duplicate@example.com",
+        status=CertificateStatus.PENDING,
+    )
+    db_session.add(job)
+    db_session.add(cert)
+    db_session.commit()
+
+    # Second worker invocation attempting to process the job that is already PROCESSING
+    process_job(job.id, db=db_session)
+    db_session.refresh(job)
+
+    # Job status remains PROCESSING and certificate remains PENDING because worker B exited on atomic claim check
+    assert job.status == JobStatus.PROCESSING
+    db_session.refresh(cert)
+    assert cert.status == CertificateStatus.PENDING

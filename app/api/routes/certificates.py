@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -18,9 +18,22 @@ router = APIRouter(prefix="/certificates", tags=["certificates"])
     response_class=FileResponse,
     summary="Download generated certificate PDF",
     description="Downloads the physical PDF certificate file if status is SUCCESS and file exists.",
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "Successfully generated PDF certificate file stream.",
+        },
+        400: {"description": "Certificate is not available for download (status is not SUCCESS)."},
+        403: {"description": "Access to requested file path is restricted."},
+        404: {"description": "Certificate not found."},
+        500: {"description": "Physical PDF file is missing on storage."},
+    },
 )
 def download_certificate(
-    certificate_id: uuid.UUID,
+    certificate_id: uuid.UUID = Path(
+        ...,
+        description="The unique UUID identifier of the certificate to download",
+    ),
     db: Session = Depends(get_db),
 ) -> FileResponse:
     """Downloads the generated PDF file for a specified certificate."""
