@@ -117,6 +117,10 @@ def process_job(job_id: uuid.UUID, db: Optional[Session] = None) -> None:
             "Fatal error during processing of job %s: %s", job_id, fatal_exc, exc_info=True
         )
         if "job" in locals() and job:
+            try:
+                db.rollback()
+            except Exception:
+                pass
             job.status = JobStatus.FAILED
             job.completed_at = datetime.now(timezone.utc)
             db.commit()

@@ -62,7 +62,7 @@ def get_job_status_response(job: GenerationJob) -> JobStatusResponse:
         if completed_count == job.total_count:
             progress_percentage = 100.0
         else:
-            progress_percentage = round((completed_count / job.total_count) * 100.0, 2)
+            progress_percentage = min(100.0, round((completed_count / job.total_count) * 100.0, 2))
     else:
         progress_percentage = 0.0
 
