@@ -1,198 +1,126 @@
-# Bulk Certificate Generator
+# Bulk Certificate Generator API
 
-## Overview
-The **Bulk Certificate Generator** is a robust backend application built with FastAPI, PostgreSQL, SQLAlchemy 2.x, and ReportLab. It allows event organizers and institutions to submit bulk certificate generation jobs, validate recipient data, asynchronously render PDF certificates in the background, track execution status and real-time progress counters, and securely retrieve generated certificates.
+High-performance asynchronous backend API built with FastAPI, PostgreSQL, SQLAlchemy 2.x, and ReportLab for bulk certificate generation, real-time progress tracking, and secure PDF delivery.
 
-## Features
-- **Bulk Job Creation**: Accepts bulk recipient lists alongside event information in a single atomic request (returns `HTTP 202 Accepted`).
-- **Comprehensive Validation**: Validates recipient names, email addresses, event metadata, date format, non-empty recipient lists, and configurable recipient batch limits.
-- **Asynchronous Processing**: Renders PDF certificates in the background via FastAPI `BackgroundTasks` without holding open HTTP connections.
-- **Independent PDF Generator**: Pure Python PDF rendering engine powered by ReportLab with custom borders, dynamic headers, participant credentials, and verification IDs.
-- **Strict Failure Isolation**: Exception during one certificate generation does not halt processing for remaining certificates in the batch.
-- **Real-time Progress & Status Metrics**: Tracks job-level states (`PENDING`, `PROCESSING`, `COMPLETED`, `COMPLETED_WITH_ERRORS`, `FAILED`) and dynamic completion percentages derived directly from persisted counters.
-- **Secure File Retrieval**: Path traversal protection enforcing that all downloaded PDF files strictly reside within the configured storage directory root.
+---
 
-## Architecture
+## 1. Project Overview
 
-```text
-Client
-  |
-  v
-FastAPI App (POST /api/v1/jobs)
-  |
-  +--> PostgreSQL DB (Atomically persists GenerationJob & Certificates in PENDING state)
-  |
-  +--> FastAPI BackgroundTasks
-          |
-          v
-     Certificate Worker (Independent DB Session)
-          |
-          +--> Renders PDFs individually via ReportLab Generator
-          |
-          +--> Updates individual Certificate & Job counter records
-          |
-          v
-     PDF Storage (storage/certificates/<job_id>/<certificate_id>.pdf)
-```
+The **Bulk Certificate Generator API** enables organizations and event hosts to generate personalized PDF certificates for multiple recipients in a single bulk request. 
 
-1. The client submits one bulk job containing event details and recipient information.
-2. FastAPI validates the request using Pydantic schemas.
-3. The job and recipient certificate records are persisted atomically in `PENDING` state within PostgreSQL.
-4. An HTTP `202 Accepted` response with the `job_id` is immediately returned to the client.
-5. A background worker creates its own database session and processes each certificate independently.
-6. Progress metrics (`total_count`, `success_count`, `failure_count`) and individual certificate statuses (`SUCCESS` or `FAILED`) are persisted.
-7. Clients poll status endpoints and download generated PDFs via secure file retrieval routes.
+### Key Highlights
+- **Single Bulk Request**: Accepts event details and recipient lists in one HTTP payload, eliminating the need for single-recipient polling requests.
+- **Asynchronous Execution**: Offloads PDF rendering to background worker tasks using FastAPI `BackgroundTasks`.
+- **Fault Isolation**: Individual certificate generation failures are isolated so remaining certificates in the batch complete successfully.
+- **Secure Retrieval**: Streams generated PDFs directly while enforcing path containment security against traversal attacks.
 
-## Tech Stack
-- **Language**: Python 3.12+
-- **API Framework**: FastAPI
-- **ASGI Server**: Uvicorn
+---
+
+## 2. Tech Stack
+
+- **Framework**: FastAPI (Python 3.12+)
 - **Database**: PostgreSQL
-- **ORM**: SQLAlchemy 2.x
+- **ORM & Migrations**: SQLAlchemy 2.x & Alembic
 - **Database Driver**: Psycopg 3 (`psycopg[binary]`)
-- **Database Migrations**: Alembic
 - **Validation**: Pydantic v2 & `email-validator`
-- **Configuration**: Pydantic Settings
 - **PDF Engine**: ReportLab
 - **Testing**: Pytest & HTTPX (`TestClient`)
+- **Server**: Uvicorn
 
-## Project Structure
-```text
-Certificate-generator-api/
-├── alembic/
-│   ├── versions/
-│   │   └── 001_initial_tables.py
-│   ├── env.py
-│   └── script.py.mako
-├── app/
-│   ├── api/
-│   │   └── routes/
-│   │       ├── certificates.py
-│   │       ├── health.py
-│   │       └── jobs.py
-│   ├── core/
-│   │   ├── config.py
-│   │   └── database.py
-│   ├── generators/
-│   │   └── pdf_generator.py
-│   ├── models/
-│   │   ├── certificate.py
-│   │   ├── enums.py
-│   │   └── job.py
-│   ├── schemas/
-│   │   ├── certificate.py
-│   │   └── job.py
-│   ├── services/
-│   │   ├── certificate_service.py
-│   │   └── job_service.py
-│   ├── workers/
-│   │   └── certificate_worker.py
-│   └── main.py
-├── storage/
-│   └── certificates/
-├── tests/
-│   ├── test_database.py
-│   ├── test_health.py
-│   ├── test_jobs.py
-│   ├── test_pdf_generator.py
-│   ├── test_phase6_retrieval.py
-│   └── test_workers.py
-├── .env.example
-├── .gitignore
-├── alembic.ini
-├── pytest.ini
-├── requirements.txt
-└── README.md
-```
+---
 
-## Prerequisites
-- **Python**: 3.12 or higher
-- **PostgreSQL**: Local instance or accessible remote database server
+## 3. Project Features
 
-## Local Setup
+- **Bulk Job Processing**: Submits bulk requests atomically and returns `HTTP 202 Accepted`.
+- **Input Validation**: Validates strings, emails, dates, empty recipient lists, and configurable maximum recipient limits.
+- **Independent PDF Rendering**: Pure Python PDF engine generating vector-quality PDF certificates.
+- **Failure Isolation**: Per-recipient exception handling ensures one failed PDF does not halt batch execution.
+- **Real-Time Progress Tracking**: Calculates dynamic completion counts and progress percentages.
+- **Secure PDF Delivery**: Streams `application/pdf` binary files with path security checks.
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/barath-roshan/Certificate-generator-api.git
-   cd Certificate-generator-api
-   ```
+---
 
-2. **Create and activate virtual environment**:
-   ```bash
-   # On Windows (PowerShell):
-   python -m venv venv
-   .\venv\Scripts\Activate.ps1
+## 4. Setup Instructions
 
-   # On Linux / macOS:
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
+### Prerequisites
+- **Python**: 3.12+
+- **PostgreSQL**: 15+ running locally or remotely
 
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Environment Variables
-Create a `.env` file in the root directory by copying `.env.example`:
-
+### 1. Clone & Setup Virtual Environment
 ```bash
-cp .env.example .env
+git clone https://github.com/barath-roshan/Certificate-generator-api.git
+cd Certificate-generator-api
+
+python -m venv venv
+# Windows (PowerShell):
+.\venv\Scripts\Activate.ps1
+# Linux / macOS:
+source venv/bin/activate
 ```
 
-Configure your environment settings:
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
+### 3. Configure Environment Variables
+Create a `.env` file in the project root based on `.env.example`:
 ```env
 APP_NAME="Bulk Certificate Generator"
 APP_VERSION="0.1.0"
 ENVIRONMENT="development"
-DATABASE_URL="postgresql+psycopg://username:password@localhost:5432/certificate_db"
+DATABASE_URL="postgresql+psycopg://postgres:password@localhost:5432/certificate_db"
 MAX_RECIPIENTS=1000
 STORAGE_PATH="storage"
 ```
 
-## Database Setup
+### 4. Database Setup & Migrations
+Create the PostgreSQL database and run Alembic migrations:
+```sql
+CREATE DATABASE certificate_db;
+```
+```bash
+alembic upgrade head
+```
 
-1. **Create PostgreSQL Database**:
-   ```sql
-   CREATE DATABASE certificate_db;
-   ```
+---
 
-2. **Apply Database Migrations**:
-   Run Alembic to apply migrations and initialize database tables:
-   ```bash
-   alembic upgrade head
-   ```
+## 5. Running the Application
 
-## Running the Application
 Start the Uvicorn development server:
-
 ```bash
 uvicorn app.main:app --reload
 ```
+- **Local Application URL**: `http://127.0.0.1:8000`
+- **Interactive Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **ReDoc Documentation**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
 
-The application runs at `http://127.0.0.1:8000`. Interactive documentation is available at:
-- **Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- **ReDoc**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
+---
 
-## API Endpoints
+## 6. Running Tests
 
-| Method | Endpoint | Description | Expected Status |
-|---|---|---|---|
-| `GET` | `/health` | Application health check | `200 OK` |
-| `POST` | `/api/v1/jobs` | Submit bulk certificate generation job | `202 Accepted` |
-| `GET` | `/api/v1/jobs/{job_id}` | Get job progress counters and status | `200 OK` |
-| `GET` | `/api/v1/jobs/{job_id}/certificates` | List job certificates and status | `200 OK` |
-| `GET` | `/api/v1/certificates/{certificate_id}` | Download generated certificate PDF | `200 OK` |
+Execute the full automated test suite using Pytest:
+```bash
+pytest
+```
+### Test Coverage
+- **API Endpoints**: Input validation, job creation, status metrics, and certificate retrieval.
+- **Database Integration**: Model schemas, relationships, cascades, and transaction boundaries.
+- **PDF Generation**: Template rendering, output path handling, and file integrity.
+- **Worker & Failure Isolation**: Asynchronous execution, counter correctness, and duplicate worker safety.
+- **Security**: Path traversal rejection (`HTTP 403`) and OpenAPI schema compliance.
 
-## Example Request
+---
+
+## 7. Submit a Certificate Generation Request
 
 **Endpoint**: `POST /api/v1/jobs`
 
+### Request Body
 ```json
 {
-  "event_name": "Annual Developer Conference 2026",
-  "event_date": "2026-10-15",
+  "event_name": "Annual Tech Conference 2026",
+  "event_date": "2026-10-08",
   "recipients": [
     {
       "name": "Alice Johnson",
@@ -206,8 +134,7 @@ The application runs at `http://127.0.0.1:8000`. Interactive documentation is av
 }
 ```
 
-**Response** (`HTTP 202 Accepted`):
-
+### Response (`HTTP 202 Accepted`)
 ```json
 {
   "job_id": "7f3d9f34-8c1e-4e8d-9e21-123456789abc",
@@ -215,101 +142,70 @@ The application runs at `http://127.0.0.1:8000`. Interactive documentation is av
   "total_count": 2
 }
 ```
+*The job is recorded atomically and background processing begins immediately.*
 
-## Checking Job Progress
+---
 
-**Endpoint**: `GET /api/v1/jobs/7f3d9f34-8c1e-4e8d-9e21-123456789abc`
+## 8. Check Job Progress
 
-**Response** (`HTTP 200 OK`):
+**Endpoint**: `GET /api/v1/jobs/{job_id}`
 
+### Response (`HTTP 200 OK`)
 ```json
 {
   "job_id": "7f3d9f34-8c1e-4e8d-9e21-123456789abc",
-  "event_name": "Annual Developer Conference 2026",
-  "event_date": "2026-10-15",
+  "event_name": "Annual Tech Conference 2026",
+  "event_date": "2026-10-08",
   "status": "COMPLETED",
   "total_count": 2,
   "success_count": 2,
   "failure_count": 0,
   "completed_count": 2,
   "progress_percentage": 100.0,
-  "created_at": "2026-10-08T00:00:00Z",
-  "completed_at": "2026-10-08T00:00:02Z"
+  "created_at": "2026-10-08T01:00:00Z",
+  "completed_at": "2026-10-08T01:00:02Z"
 }
 ```
 
-### Job Statuses
-- `PENDING`: Initial state when job is recorded.
-- `PROCESSING`: Background worker actively generating certificates.
-- `COMPLETED`: All certificates generated successfully.
+### Supported Job Statuses
+- `PENDING`: Initial recorded state.
+- `PROCESSING`: Background worker actively generating PDFs.
+- `COMPLETED`: All recipient certificates successfully generated.
 - `COMPLETED_WITH_ERRORS`: Job finished, but one or more certificates failed.
 - `FAILED`: Unrecoverable infrastructure or job-level error.
 
-## Retrieving Certificates
+---
 
-1. **List certificates for a job**:
-   `GET /api/v1/jobs/{job_id}/certificates`
+## 9. Retrieve Generated Certificates
 
-   **Response** (`HTTP 200 OK`):
-   ```json
-   {
-     "job_id": "7f3d9f34-8c1e-4e8d-9e21-123456789abc",
-     "certificates": [
-       {
-         "certificate_id": "74b00657-d1d7-4429-8c82-240c867e84ed",
-         "recipient_name": "Alice Johnson",
-         "recipient_email": "alice@example.com",
-         "status": "SUCCESS",
-         "error_message": null,
-         "created_at": "2026-10-08T00:00:00Z",
-         "completed_at": "2026-10-08T00:00:01Z"
-       }
-     ]
-   }
-   ```
+### 1. List Certificates for a Job
+**Endpoint**: `GET /api/v1/jobs/{job_id}/certificates`  
+Returns recipient names, emails, statuses (`SUCCESS` / `FAILED`), and error messages.
 
-2. **Download PDF file**:
-   `GET /api/v1/certificates/74b00657-d1d7-4429-8c82-240c867e84ed`
-   - Returns binary PDF (`Content-Type: application/pdf`).
-   - Downloads are only allowed for certificates in `SUCCESS` status.
+### 2. Download Certificate PDF
+**Endpoint**: `GET /api/v1/certificates/{certificate_id}`  
+Downloads the binary PDF file (`Content-Type: application/pdf`) when status is `SUCCESS`. Returns `HTTP 400` if not yet generated or failed.
 
-## Running Tests
-Run the comprehensive test suite with `pytest`:
+---
 
-```bash
-pytest
-```
+## 10. API Summary
 
-The test suite consists of 34 unit and integration tests covering database models, API endpoint validation, worker processing, failure isolation, PDF rendering, and path security.
+| Method | Endpoint | Purpose | Status Code |
+|---|---|---|---|
+| `GET` | `/health` | Application health check | `200 OK` |
+| `POST` | `/api/v1/jobs` | Submit bulk certificate generation job | `202 Accepted` |
+| `GET` | `/api/v1/jobs/{job_id}` | Get job progress counters and status | `200 OK` |
+| `GET` | `/api/v1/jobs/{job_id}/certificates` | List job certificates and status | `200 OK` |
+| `GET` | `/api/v1/certificates/{certificate_id}` | Download generated certificate PDF | `200 OK` |
 
-## Certificate Storage
-Generated certificates are stored on disk under the configured root directory:
+---
 
-```text
-storage/
-└── certificates/
-    └── <job_id>/
-        └── <certificate_id>.pdf
-```
+## 11. Important Design Decisions
 
-The database stores relative storage file paths. The retrieval service resolves target paths using `pathlib.Path.resolve()` and verifies that resolved paths remain within the configured `STORAGE_PATH` root directory.
-
-## Failure Handling
-- **Individual Certificate Isolation**: Processing each recipient is wrapped in an isolated exception block. An error generating one recipient's PDF logs the failure, updates that certificate to `FAILED`, increments `failure_count`, and continues processing remaining recipients.
-- **Final Status Determination**: If all certificates succeed, job status becomes `COMPLETED`. If at least one recipient fails, job status becomes `COMPLETED_WITH_ERRORS`.
-- **Database Safety**: Worker functions execute with explicit transaction rollback handling to ensure invalid partial states are never committed.
-
-## Design Decisions
-- **FastAPI BackgroundTasks**: Selected to handle background PDF generation without introducing heavy external message queues (like Celery/Redis) while meeting all assignment processing requirements.
-- **Dedicated Worker Session**: The background worker explicitly opens and closes its own SQLAlchemy session (`SessionLocal()`), preventing request-scoped session leakage.
-- **Derived Progress Metrics**: Progress percentages and `completed_count` are derived dynamically (`success_count + failure_count`), avoiding redundant state duplication in the database schema.
-- **Path Security**: Resolves file paths strictly and rejects path traversal attempts with `HTTP 403 Forbidden`.
-
-## Limitations
-- **In-Process Worker Execution**: FastAPI `BackgroundTasks` executes inside the API worker process. If the server process restarts while a job is running, in-flight background tasks may be interrupted.
-- **Local Filesystem Storage**: PDF files are saved to the server's local storage directory rather than cloud object storage (e.g., AWS S3).
-
-## Future Improvements
-- Integrate a distributed task queue (e.g., Celery with Redis/RabbitMQ) for multi-worker scaling and queue durability.
-- Add cloud object storage backends (AWS S3 / Google Cloud Storage) for scalable certificate storage.
-- Support zip archive batch downloads for completed jobs.
+- **Bulk Processing Architecture**: Single bulk HTTP request avoids client request overhead and allows background processing.
+- **FastAPI BackgroundTasks**: Light-weight, built-in task execution without requiring complex external message queues.
+- **Failure Isolation**: Per-certificate try-catch blocks prevent a single bad record from crashing the entire batch.
+- **Dedicated Worker Sessions**: The worker opens an independent `SessionLocal()` session and commits per certificate, preventing long-running DB locks during PDF generation.
+- **Derived Progress**: Progress metrics are dynamically calculated from `success_count + failure_count`, avoiding stale redundant progress state.
+- **Path Security**: Enforces `pathlib.Path.resolve().relative_to()` to prevent directory traversal attacks.
+- **Modular Design**: Clear separation between routes, services, models, schemas, workers, and PDF rendering engines.
