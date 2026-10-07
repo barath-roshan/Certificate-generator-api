@@ -3,17 +3,17 @@
 ## Project Purpose
 The Bulk Certificate Generator application is designed to process bulk requests for certificate generation, validate recipient information, generate individual certificates from predefined templates, and track job execution progress.
 
-## Current Status: Phase 2 (PostgreSQL & Persistence Layer)
-This codebase represents **Phase 2: PostgreSQL Database Integration and SQLAlchemy Persistence Foundation**.
+## Current Status: Phase 3 (Bulk Job Creation API)
+This codebase represents **Phase 3: Job Creation API**.
 
 It introduces:
-- **PostgreSQL Database Support**
-- **SQLAlchemy 2.x Declarative Models** (`GenerationJob` and `Certificate`)
-- **Alembic Database Migrations**
-- **Database Dependency Injection** (`get_db`)
+- **Pydantic Validation Schemas** (`RecipientCreate`, `GenerationJobCreate`, `GenerationJobResponse`)
+- **Configurable Recipient Limits** (`MAX_RECIPIENTS`)
+- **Service Layer** (`app/services/job_service.py`) for atomic database transactions
+- **API Endpoint**: `POST /api/v1/jobs` returning HTTP 202 Accepted with generated `job_id`
 
 > [!NOTE]
-> Background job processing, PDF generation (ReportLab), and public certificate generation API endpoints remain out of scope for Phase 2 and will be introduced in subsequent phases.
+> PDF generation (ReportLab) and background task processing (Celery/Workers) remain out of scope for Phase 3 and will be introduced in subsequent phases.
 
 ## Tech Stack
 - **Python**: 3.12+
@@ -22,32 +22,44 @@ It introduces:
 - **ORM**: SQLAlchemy 2.x
 - **Database Driver**: Psycopg 3 (`psycopg[binary]`)
 - **Database Migrations**: Alembic
+- **Validation**: Pydantic v2 & Email Validator
 - **Configuration**: Pydantic Settings
 - **Testing**: Pytest & HTTPX (TestClient)
 
-## Database Architecture
+## API Endpoints
 
-### Models & Relationships
+### 1. Health Check
+- **URL**: `GET /health`
+- **Response**: `{"status": "ok"}`
 
-1. **`GenerationJob` (`generation_jobs`)**:
-   - `id`: UUID (Primary Key)
-   - `event_name`: String (Required)
-   - `event_date`: Date (Optional)
-   - `status`: JobStatus Enum (`PENDING`, `PROCESSING`, `COMPLETED`, `COMPLETED_WITH_ERRORS`, `FAILED`)
-   - `total_count`, `success_count`, `failure_count`: Integers
-   - `created_at`, `completed_at`: Timestamps with timezone
-
-2. **`Certificate` (`certificates`)**:
-   - `id`: UUID (Primary Key)
-   - `job_id`: UUID (Foreign Key -> `generation_jobs.id`, ON DELETE CASCADE, Indexed)
-   - `recipient_name`: String (Required)
-   - `recipient_email`: String (Required)
-   - `status`: CertificateStatus Enum (`PENDING`, `PROCESSING`, `SUCCESS`, `FAILED`, Indexed)
-   - `file_path`: String (Optional)
-   - `error_message`: String (Optional)
-   - `created_at`, `completed_at`: Timestamps with timezone
-
-- **Relationship**: `GenerationJob 1 ---- N Certificate` (`job.certificates` and `certificate.job`).
+### 2. Create Bulk Certificate Generation Job
+- **URL**: `POST /api/v1/jobs`
+- **Status Code**: `202 Accepted`
+- **Request Body**:
+  ```json
+  {
+    "event_name": "Python Workshop",
+    "event_date": "2026-10-07",
+    "recipients": [
+      {
+        "name": "Barath Roshan",
+        "email": "barath@example.com"
+      },
+      {
+        "name": "Arun Kumar",
+        "email": "arun@example.com"
+      }
+    ]
+  }
+  ```
+- **Response Body**:
+  ```json
+  {
+    "job_id": "7f3d9f34-8c1e-4e8d-9e21-123456789abc",
+    "status": "PENDING",
+    "total_count": 2
+  }
+  ```
 
 ## Setup & Local Database Configuration
 
@@ -76,19 +88,13 @@ It introduces:
    ```bash
    cp .env.example .env
    ```
-   Set `DATABASE_URL` in `.env` to point to your local PostgreSQL instance:
+   Set configuration in `.env`:
    ```env
    DATABASE_URL="postgresql+psycopg://postgres:your_password@localhost:5432/certificate_db"
+   MAX_RECIPIENTS=1000
    ```
 
-5. **Local PostgreSQL Setup**:
-   Create local PostgreSQL database:
-   ```sql
-   CREATE DATABASE certificate_db;
-   ```
-
-6. **Run Database Migrations**:
-   Initialize and apply Alembic schema migrations:
+5. **Run Database Migrations**:
    ```bash
    alembic upgrade head
    ```
@@ -108,11 +114,6 @@ The application will start at `http://127.0.0.1:8000`.
 Access the interactive Swagger UI at:
 - **Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 - **ReDoc**: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
-
-## Health Endpoint
-
-- **URL**: `GET /health`
-- **Response**: `{"status": "ok"}`
 
 ## Running Tests
 

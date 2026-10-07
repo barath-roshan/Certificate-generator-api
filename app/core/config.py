@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = (
         "postgresql+psycopg://postgres:password@localhost:5432/certificate_db"
     )
+    MAX_RECIPIENTS: int = 1000
 
     model_config = SettingsConfigDict(
         env_file=".env",

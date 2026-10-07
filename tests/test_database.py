@@ -12,12 +12,16 @@ from app.models.enums import CertificateStatus, JobStatus
 from app.models.job import GenerationJob
 
 
+from sqlalchemy.pool import StaticPool
+
+
 @pytest.fixture
 def db_session() -> Generator[Session, None, None]:
     """Fixture providing an isolated in-memory database session for testing."""
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(
