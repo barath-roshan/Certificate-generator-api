@@ -3,22 +3,22 @@
 ## Project Purpose
 The Bulk Certificate Generator application is designed to process bulk requests for certificate generation, validate recipient information, generate individual certificates from predefined templates, and track job execution progress.
 
-## Current Status: Phase 4 (Certificate PDF Generator)
-This codebase represents **Phase 4: Standalone Certificate PDF Generator**.
+## Current Status: Phase 5 (Background Bulk Processing)
+This codebase represents **Phase 5: Background Certificate Processing**.
 
 It introduces:
-- **Standalone PDF Generator Module** (`app/generators/pdf_generator.py`) using ReportLab
-- **Clean Input Data Structure** (`CertificateData` dataclass)
-- **Predefined Professional Certificate Template** (Landscape A4, double decorative border, typography, formatted dates, and signature lines)
-- **Deterministic Storage Pattern** (`storage/certificates/{job_id}/{certificate_id}.pdf`)
-- **Independent Test Suite** (`tests/test_pdf_generator.py`)
+- **Background Worker Module** (`app/workers/certificate_worker.py`)
+- **FastAPI BackgroundTasks Integration** (asynchronous job scheduling on `POST /api/v1/jobs`)
+- **Fault Isolation Engine**: Single certificate failures do not halt batch processing
+- **Independent Database Session Strategy**: Workers instantiate dedicated database sessions via `SessionLocal`
+- **Granular Progress Counters & Status Tracking**: Updates job status to `PROCESSING`, `COMPLETED`, or `COMPLETED_WITH_ERRORS`
 
 > [!NOTE]
-> PDF generation is currently an independent component and is decoupled from HTTP API routes and database transactions. Bulk job background processing integration will occur in a later phase.
+> `FastAPI BackgroundTasks` is an in-process, non-durable task execution choice for this assignment. Production deployments handling large-scale asynchronous distributed queues can be upgraded to Celery/Redis/RabbitMQ in future architecture phases.
 
 ## Tech Stack
 - **Python**: 3.12+
-- **Framework**: FastAPI
+- **Framework**: FastAPI (BackgroundTasks)
 - **PDF Engine**: ReportLab
 - **ASGI Server**: Uvicorn
 - **ORM**: SQLAlchemy 2.x
@@ -28,19 +28,29 @@ It introduces:
 - **Configuration**: Pydantic Settings
 - **Testing**: Pytest & HTTPX (TestClient)
 
-## Certificate Generator & Storage Architecture
+## Background Processing Architecture
 
-### 1. Certificate Template Design
-The PDF generator renders a professional A4 landscape certificate containing:
-- Double border frame (Navy `#1A365D` outer line & Gold `#D69E2E` inner line)
-- Header: **CERTIFICATE OF PARTICIPATION**
-- Presentation: **This certificate is proudly presented to `<RECIPIENT NAME>`**
-- Event Context: **for successfully participating in `<EVENT NAME>`**
-- Date: Human-readable deterministic format (e.g. `07 October 2026`)
-- Footer: Unique Certificate ID (`Certificate ID: <UUID>`) & Signature section
+### 1. Processing Lifecycle
+1. **API Job Submission (`POST /api/v1/jobs`)**:
+   - Validates Pydantic request body.
+   - Atomically commits `GenerationJob` and `Certificate` records in `PENDING` state.
+   - Schedules `process_job(job_id)` via `background_tasks.add_task()`.
+   - Returns `HTTP 202 Accepted` immediately.
+
+2. **Worker Execution (`app/workers/certificate_worker.py`)**:
+   - Opens a dedicated, isolated database session.
+   - Updates `GenerationJob.status = PROCESSING`.
+   - Processes each `Certificate` record individually:
+     - Marks certificate `PROCESSING`.
+     - Calls PDF generator to render ReportLab PDF (`storage/certificates/{job_id}/{certificate_id}.pdf`).
+     - On Success: Marks certificate `SUCCESS`, records `file_path`, increments `success_count`.
+     - On Failure: Catches exception, marks certificate `FAILED`, records safe `error_message`, increments `failure_count`, and continues processing remaining certificates.
+   - Calculates final job state:
+     - `COMPLETED` if all certificates succeed (`failure_count == 0`).
+     - `COMPLETED_WITH_ERRORS` if any certificate fails.
 
 ### 2. Local Storage Structure
-Certificates are generated locally under the configured storage root:
+Certificates are generated under:
 ```
 storage/
 └── certificates/

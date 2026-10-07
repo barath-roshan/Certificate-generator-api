@@ -41,12 +41,13 @@ def db_session() -> Generator[Session, None, None]:
 
 
 @pytest.fixture
-def client(db_session: Session) -> Generator[TestClient, None, None]:
-    """Fixture providing a TestClient with dependency override for get_db."""
+def client(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
+    """Fixture providing a TestClient with dependency override for get_db and worker session."""
     def override_get_db() -> Generator[Session, None, None]:
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    monkeypatch.setattr("app.workers.certificate_worker.get_worker_session", lambda: db_session)
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -73,14 +74,14 @@ def test_create_job_success(client: TestClient, db_session: Session) -> None:
 
     job_id = uuid.UUID(data["job_id"])
 
-    # Verify GenerationJob record in DB
+    # Verify GenerationJob record in DB (processed by background worker)
     job = db_session.scalar(select(GenerationJob).where(GenerationJob.id == job_id))
     assert job is not None
     assert job.event_name == "Python Workshop 2026"
     assert str(job.event_date) == "2026-10-07"
-    assert job.status == JobStatus.PENDING
+    assert job.status == JobStatus.COMPLETED
     assert job.total_count == 2
-    assert job.success_count == 0
+    assert job.success_count == 2
     assert job.failure_count == 0
 
     # Verify Certificate records in DB
@@ -89,8 +90,8 @@ def test_create_job_success(client: TestClient, db_session: Session) -> None:
     ).all()
     assert len(certificates) == 2
     for cert in certificates:
-        assert cert.status == CertificateStatus.PENDING
-        assert cert.file_path is None
+        assert cert.status == CertificateStatus.SUCCESS
+        assert cert.file_path is not None
         assert cert.error_message is None
 
     recipient_emails = {c.recipient_email for c in certificates}
