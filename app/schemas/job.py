@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, datetime
+from typing import Optional
 import uuid
 
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 from app.core.config import settings
-from app.models.enums import JobStatus
+from app.models.enums import CertificateStatus, JobStatus
 
 
 class RecipientCreate(BaseModel):
@@ -59,5 +60,46 @@ class GenerationJobResponse(BaseModel):
     job_id: uuid.UUID
     status: JobStatus
     total_count: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class JobStatusResponse(BaseModel):
+    """Response schema for detailed job status and progress monitoring."""
+
+    job_id: uuid.UUID
+    event_name: str
+    event_date: Optional[date] = None
+    status: JobStatus
+    total_count: int
+    success_count: int
+    failure_count: int
+    completed_count: int
+    progress_percentage: float
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CertificateSummaryResponse(BaseModel):
+    """Response schema for an individual certificate in a job listing."""
+
+    certificate_id: uuid.UUID
+    recipient_name: str
+    recipient_email: str
+    status: CertificateStatus
+    error_message: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class JobCertificatesResponse(BaseModel):
+    """Response schema for listing all certificates belonging to a job."""
+
+    job_id: uuid.UUID
+    certificates: list[CertificateSummaryResponse]
 
     model_config = ConfigDict(from_attributes=True)

@@ -3,18 +3,15 @@
 ## Project Purpose
 The Bulk Certificate Generator application is designed to process bulk requests for certificate generation, validate recipient information, generate individual certificates from predefined templates, and track job execution progress.
 
-## Current Status: Phase 5 (Background Bulk Processing)
-This codebase represents **Phase 5: Background Certificate Processing**.
+## Current Status: Phase 6 (Job Status & Retrieval APIs)
+This codebase represents **Phase 6: Job Status & Certificate Retrieval APIs**.
 
 It introduces:
-- **Background Worker Module** (`app/workers/certificate_worker.py`)
-- **FastAPI BackgroundTasks Integration** (asynchronous job scheduling on `POST /api/v1/jobs`)
-- **Fault Isolation Engine**: Single certificate failures do not halt batch processing
-- **Independent Database Session Strategy**: Workers instantiate dedicated database sessions via `SessionLocal`
-- **Granular Progress Counters & Status Tracking**: Updates job status to `PROCESSING`, `COMPLETED`, or `COMPLETED_WITH_ERRORS`
-
-> [!NOTE]
-> `FastAPI BackgroundTasks` is an in-process, non-durable task execution choice for this assignment. Production deployments handling large-scale asynchronous distributed queues can be upgraded to Celery/Redis/RabbitMQ in future architecture phases.
+- **Job Progress & Status API**: `GET /api/v1/jobs/{job_id}`
+- **Job Certificates Listing API**: `GET /api/v1/jobs/{job_id}/certificates`
+- **Certificate PDF Download API**: `GET /api/v1/certificates/{certificate_id}`
+- **Path Traversal Security**: Strict validation enforcing that downloaded files reside inside `STORAGE_PATH`
+- **On-the-Fly Progress Calculation**: Calculates `completed_count` (`success_count + failure_count`) and `progress_percentage` (`completed_count / total_count * 100`) dynamically from persisted counters.
 
 ## Tech Stack
 - **Python**: 3.12+
@@ -27,36 +24,6 @@ It introduces:
 - **Validation**: Pydantic v2 & Email Validator
 - **Configuration**: Pydantic Settings
 - **Testing**: Pytest & HTTPX (TestClient)
-
-## Background Processing Architecture
-
-### 1. Processing Lifecycle
-1. **API Job Submission (`POST /api/v1/jobs`)**:
-   - Validates Pydantic request body.
-   - Atomically commits `GenerationJob` and `Certificate` records in `PENDING` state.
-   - Schedules `process_job(job_id)` via `background_tasks.add_task()`.
-   - Returns `HTTP 202 Accepted` immediately.
-
-2. **Worker Execution (`app/workers/certificate_worker.py`)**:
-   - Opens a dedicated, isolated database session.
-   - Updates `GenerationJob.status = PROCESSING`.
-   - Processes each `Certificate` record individually:
-     - Marks certificate `PROCESSING`.
-     - Calls PDF generator to render ReportLab PDF (`storage/certificates/{job_id}/{certificate_id}.pdf`).
-     - On Success: Marks certificate `SUCCESS`, records `file_path`, increments `success_count`.
-     - On Failure: Catches exception, marks certificate `FAILED`, records safe `error_message`, increments `failure_count`, and continues processing remaining certificates.
-   - Calculates final job state:
-     - `COMPLETED` if all certificates succeed (`failure_count == 0`).
-     - `COMPLETED_WITH_ERRORS` if any certificate fails.
-
-### 2. Local Storage Structure
-Certificates are generated under:
-```
-storage/
-└── certificates/
-    └── {job_id}/
-        └── {certificate_id}.pdf
-```
 
 ## API Endpoints
 
@@ -92,6 +59,68 @@ storage/
     "total_count": 2
   }
   ```
+
+### 3. Get Job Status & Progress
+- **URL**: `GET /api/v1/jobs/{job_id}`
+- **Response Body (HTTP 200 OK)**:
+  ```json
+  {
+    "job_id": "7f3d9f34-8c1e-4e8d-9e21-123456789abc",
+    "event_name": "Python Workshop",
+    "event_date": "2026-10-07",
+    "status": "PROCESSING",
+    "total_count": 100,
+    "success_count": 65,
+    "failure_count": 2,
+    "completed_count": 67,
+    "progress_percentage": 67.0,
+    "created_at": "2026-10-07T18:50:00Z",
+    "completed_at": null
+  }
+  ```
+- **Progress Formula**:
+  - `completed_count = success_count + failure_count`
+  - `progress_percentage = round((completed_count / total_count) * 100.0, 2)`
+- **HTTP 404**: Returned if `job_id` does not exist.
+
+### 4. List Job Certificates
+- **URL**: `GET /api/v1/jobs/{job_id}/certificates`
+- **Response Body (HTTP 200 OK)**:
+  ```json
+  {
+    "job_id": "7f3d9f34-8c1e-4e8d-9e21-123456789abc",
+    "certificates": [
+      {
+        "certificate_id": "74b00657-d1d7-4429-8c82-240c867e84ed",
+        "recipient_name": "Barath Roshan",
+        "recipient_email": "barath@example.com",
+        "status": "SUCCESS",
+        "error_message": null,
+        "created_at": "2026-10-07T18:50:00Z",
+        "completed_at": "2026-10-07T18:50:02Z"
+      },
+      {
+        "certificate_id": "9b10a452-3e2b-4f11-8c90-112233445566",
+        "recipient_name": "Arun Kumar",
+        "recipient_email": "arun@example.com",
+        "status": "FAILED",
+        "error_message": "Certificate PDF generation failed",
+        "created_at": "2026-10-07T18:50:00Z",
+        "completed_at": "2026-10-07T18:50:03Z"
+      }
+    ]
+  }
+  ```
+- **Ordering**: Returns certificate list in deterministic `created_at` ascending order.
+- **HTTP 404**: Returned if `job_id` does not exist.
+
+### 5. Download Certificate PDF
+- **URL**: `GET /api/v1/certificates/{certificate_id}`
+- **Response**: `200 OK` (`application/pdf`) with `Content-Disposition: attachment; filename="certificate-{id}.pdf"`
+- **Availability Rules**:
+  - Requires `status == SUCCESS`. Returns `400 Bad Request` if certificate is still `PENDING`, `PROCESSING`, or `FAILED`.
+  - Path traversal checks enforce that the physical file resolves within `STORAGE_PATH` (`HTTP 403 Forbidden` on security violations).
+  - Returns `500 Internal Server Error` if the physical file is missing on storage without leaking server directory paths.
 
 ## Setup & Local Configuration
 
