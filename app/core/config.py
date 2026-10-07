@@ -11,6 +11,7 @@ class Settings(BaseSettings):
         "postgresql+psycopg://postgres:password@localhost:5432/certificate_db"
     )
     MAX_RECIPIENTS: int = 1000
+    STORAGE_PATH: str = "storage"
 
     model_config = SettingsConfigDict(
         env_file=".env",

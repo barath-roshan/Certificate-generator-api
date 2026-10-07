@@ -23,3 +23,8 @@ htmlcov/
 .vscode/
 .idea/
 .DS_Store
+
+# Storage & Generated files
+storage/
+*.pdf
+
